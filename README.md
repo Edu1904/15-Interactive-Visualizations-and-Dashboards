@@ -87,6 +87,33 @@ Use Flask API starter code to serve the data needed for your plots.
 
 - - -
 
+## MATLAB SEG-D Reader
+
+If you need to pull SEG-D seismic records into MATLAB for preprocessing or visualization, use the provided `read_segd.m` helper in the repository root:
+
+```matlab
+segd = read_segd('line01.sgd', ...
+    'SamplesPerTrace', 4000, ...
+    'TraceHeaderBytes', 20, ...
+    'SampleFormat', 'int32');
+```
+
+SEG-D variants differ by vendor, so supply `SamplesPerTrace`, `TraceCount`, and any trace-header byte count explicitly when your files do not use the standard block lengths.
+
+- **Sercel WING preset**: the reader accepts `Preset','sercel_wing'` to apply common block sizes (3×32-byte general headers, 2×32-byte additional headers, 512-byte scan type header, 1024-byte extended header, 1024-byte external header) and switches the sample format to 32-bit IEEE (`single`) matching format code `8058`.
+
+```matlab
+segd = read_segd('wing_record.sgd', ...
+    'Preset', 'sercel_wing', ...
+    'TraceHeaderBytes', 20, ...       % core trace header
+    'TraceCount', 16, ...             % channel sets per record (land standard)
+    'SamplesPerTrace', 4000);         % adjust to your record length
+```
+
+- Common codes: Base scan interval codes -> ms: 4→0.25, 8→0.5, 10→1, 20→2, 40→4. Abbreviations: BCD (Binary Coded Decimal), bin (unsigned binary), 2's (two's complement), asc (ASCII), flt (IEEE single), dbl (IEEE double).
+
+ - - -
+
 ### Copyright
 
 Data Boot Camp © 2018. All Rights Reserved.
