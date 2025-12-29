@@ -17,6 +17,14 @@ function segd = read_segd(filename, varargin)
 %     'DataOffset'       - Byte offset for the first trace. When omitted,
 %                          it is estimated from the general/external
 %                          header counts.
+%     'Preset'           - Convenience preset; supports 'sercel_wing'
+%                          (32-bit IEEE, Sercel-specific headers).
+%     'GeneralHeaderBlocks'    - Override count of 32-byte general headers.
+%     'ExternalHeaderBlocks'   - Override count of 32-byte external headers.
+%     'AdditionalHeaderBlocks' - Override count of 32-byte additional headers.
+%     'ScanTypeHeaderBytes'    - Override scan type header size (bytes).
+%     'ExtendedHeaderBytes'    - Override extended header size (bytes).
+%     'ExternalHeaderBytes'    - Override external header size (bytes).
 %
 %   Example:
 %     segd = read_segd('line01.sgd', ...
@@ -42,8 +50,27 @@ p.addParameter('SamplesPerTrace', [], @(x) isempty(x) || (isscalar(x) && x > 0))
 p.addParameter('TraceHeaderBytes', 0, @(x) isnumeric(x) && isscalar(x) && x >= 0);
 p.addParameter('SampleFormat', 'int32', @(x) ischar(x) || isstring(x));
 p.addParameter('DataOffset', [], @(x) isempty(x) || (isscalar(x) && x >= 0));
+p.addParameter('Preset', '', @(x) ischar(x) || isstring(x));
+p.addParameter('GeneralHeaderBlocks', [], @(x) isempty(x) || (isscalar(x) && x >= 0));
+p.addParameter('ExternalHeaderBlocks', [], @(x) isempty(x) || (isscalar(x) && x >= 0));
+p.addParameter('AdditionalHeaderBlocks', [], @(x) isempty(x) || (isscalar(x) && x >= 0));
+p.addParameter('ScanTypeHeaderBytes', [], @(x) isempty(x) || (isscalar(x) && x >= 0));
+p.addParameter('ExtendedHeaderBytes', [], @(x) isempty(x) || (isscalar(x) && x >= 0));
+p.addParameter('ExternalHeaderBytes', [], @(x) isempty(x) || (isscalar(x) && x >= 0));
 p.parse(varargin{:});
 opts = p.Results;
+
+preset = lower(string(opts.Preset));
+if preset == "sercel_wing"
+    if strcmpi(opts.SampleFormat, 'int32')
+        opts.SampleFormat = 'single'; % format code 8058 => 32-bit IEEE
+    end
+    if isempty(opts.GeneralHeaderBlocks), opts.GeneralHeaderBlocks = 3; end
+    if isempty(opts.AdditionalHeaderBlocks), opts.AdditionalHeaderBlocks = 2; end
+    if isempty(opts.ScanTypeHeaderBytes), opts.ScanTypeHeaderBytes = 512; end
+    if isempty(opts.ExtendedHeaderBytes), opts.ExtendedHeaderBytes = 1024; end
+    if isempty(opts.ExternalHeaderBytes), opts.ExternalHeaderBytes = 1024; end
+end
 
 sampleFormat = lower(string(opts.SampleFormat));
 switch sampleFormat
@@ -81,14 +108,48 @@ gh1 = fread(fid, 32, 'uint8=>uint8');
 if numel(gh1) < 32
     error('File "%s" does not contain a complete SEG-D general header.', filename);
 end
+formatCode = bitor(bitshift(uint16(gh1(3)), 8), uint16(gh1(4)));
+baseScanCode = gh1(23);
+switch baseScanCode
+    case 4
+        baseScanMs = 0.25;
+    case 8
+        baseScanMs = 0.5;
+    case 10
+        baseScanMs = 1;
+    case 20
+        baseScanMs = 2;
+    case 40
+        baseScanMs = 4;
+    otherwise
+        baseScanMs = NaN;
+end
 
 generalHeaderBlocks = max(1, bcd2dec(gh1(27)));
 externalHeaderBlocks = bcd2dec(gh1(29));
 additionalHeaderBlocks = bcd2dec(gh1(30));
+if ~isempty(opts.GeneralHeaderBlocks), generalHeaderBlocks = opts.GeneralHeaderBlocks; end
+if ~isempty(opts.ExternalHeaderBlocks), externalHeaderBlocks = opts.ExternalHeaderBlocks; end
+if ~isempty(opts.AdditionalHeaderBlocks), additionalHeaderBlocks = opts.AdditionalHeaderBlocks; end
+scanTypeHeaderBytes = opts.ScanTypeHeaderBytes;
+extendedHeaderBytes = opts.ExtendedHeaderBytes;
+externalHeaderBytes = opts.ExternalHeaderBytes;
 
 if isempty(opts.DataOffset)
-    headerBlocks = generalHeaderBlocks + externalHeaderBlocks + additionalHeaderBlocks;
-    dataOffset = 32 * headerBlocks;
+    headerBytes = 32 * (generalHeaderBlocks + additionalHeaderBlocks);
+    if ~isempty(externalHeaderBlocks)
+        headerBytes = headerBytes + 32 * externalHeaderBlocks;
+    end
+    if ~isempty(scanTypeHeaderBytes)
+        headerBytes = headerBytes + scanTypeHeaderBytes;
+    end
+    if ~isempty(extendedHeaderBytes)
+        headerBytes = headerBytes + extendedHeaderBytes;
+    end
+    if ~isempty(externalHeaderBytes)
+        headerBytes = headerBytes + externalHeaderBytes;
+    end
+    dataOffset = headerBytes;
     % Guard against malformed headers; fall back to the first header block.
     if dataOffset <= 0 || dataOffset >= fileSize
         dataOffset = 32 * generalHeaderBlocks;
@@ -168,9 +229,14 @@ end
 segd = struct( ...
     'filename', filename, ...
     'data_offset', dataOffset, ...
+    'format_code', formatCode, ...
+    'base_scan_interval_ms', baseScanMs, ...
     'general_header_blocks', generalHeaderBlocks, ...
     'external_header_blocks', externalHeaderBlocks, ...
     'additional_header_blocks', additionalHeaderBlocks, ...
+    'scan_type_header_bytes', scanTypeHeaderBytes, ...
+    'extended_header_bytes', extendedHeaderBytes, ...
+    'external_header_bytes', externalHeaderBytes, ...
     'raw_header', rawHeader, ...
     'trace_header_bytes', traceHeaderBytes, ...
     'samples_per_trace', samplesPerTrace, ...
