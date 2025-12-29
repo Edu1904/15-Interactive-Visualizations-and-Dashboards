@@ -87,6 +87,21 @@ Use Flask API starter code to serve the data needed for your plots.
 
 - - -
 
+## MATLAB SEG-D Reader
+
+If you need to pull SEG-D seismic records into MATLAB for preprocessing or visualization, use the provided `read_segd.m` helper in the repository root:
+
+```matlab
+segd = read_segd('line01.sgd', ...
+    'SamplesPerTrace', 4000, ...
+    'TraceHeaderBytes', 20, ...
+    'SampleFormat', 'int32');
+```
+
+SEG-D variants differ by vendor, so supply `SamplesPerTrace`, `TraceCount`, and any trace-header byte count explicitly when your files do not use the standard block lengths.
+
+ - - -
+
 ### Copyright
 
 Data Boot Camp © 2018. All Rights Reserved.
